@@ -1,6 +1,13 @@
 import io
 import pandas as pd
 import json
+from fastapi import FastAPI
+from pydantic import BaseModel
+
+app = FastAPI()
+
+class EmailRequest(BaseModel):
+    email: str
 
 # Function to create rows for each symptom
 def expand_symptoms(row):
@@ -70,3 +77,19 @@ def construct_csv(csv_data):
     expanded_df.rename(columns={'notes': 'Log Notes'}, inplace=True)
 
     return expanded_df
+
+@app.get('/export_csv')
+def export_csv():
+    return None
+
+@app.get('/export_pdf')
+def export_pdf():
+    return None
+
+@app.get('/export')
+def export():
+    return None
+
+if __name__ == '__main__':
+    import uvicorn
+    uvicorn.run(app, host='0.0.0.0', port=8000)
