@@ -7,8 +7,12 @@ from dotenv import load_dotenv
 import os
 from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from jose import jwt
 from pprint import pprint
+from aiosmtplib import SMTP
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.base import MIMEBase
+from email import encoders
 
 load_dotenv()
 
@@ -17,20 +21,15 @@ app = FastAPI()
 class EmailRequest(BaseModel):
     email: str
 
-security = HTTPBearer()
+class UserID(BaseModel):
+    user_id: str
 
-def parseJWT(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    token = credentials.credentials
-    print(f"Received token: {token}")  # Log the received token
-    try:
-        payload = jwt.decode(token, os.getenv('SUPABASE_JWT_SECRET'), algorithms=['HS256'])
-        print(f"Decoded payload: {payload}")  # Log the decoded payload
-        return payload['sub']  # assuming the user ID is stored in the 'sub' field
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Token expired")
-    except jwt.JWTError as e:
-        print(f"JWT error: {e}")  # Log the JWT error
-        raise HTTPException(status_code=401, detail="Invalid token")
+class ExportRequest(BaseModel):
+    email: str
+    user_id: str
+
+
+security = HTTPBearer()
 
 # Function to create rows for each symptom
 def expand_symptoms(row):
@@ -91,7 +90,7 @@ def construct_csv(csv_data):
     # Convert the 'time' column to datetime and format it to 'h:mm a'
     expanded_df['time'] = pd.to_datetime(expanded_df['time'], format='%H:%M:%S').dt.strftime('%I:%M %p')
 
-    # Rename the columns
+    # Rename columns
     expanded_df.rename(columns={'title': 'Log Title'}, inplace=True)
     expanded_df.rename(columns={'date': 'Date'}, inplace=True)
     expanded_df.rename(columns={'time': 'Time'}, inplace=True)
@@ -102,18 +101,29 @@ def construct_csv(csv_data):
     return expanded_df
 
 @app.post('/export')
-def export(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    jwt = credentials.credentials
+# Old definition for JWT thorugh authorization bearer
+# def export(emailReq: EmailRequest, credentials: HTTPAuthorizationCredentials = Depends(security)):
+def export(request: ExportRequest):
+    user_id = request.user_id
+
+    SENDER_EMAIL='visualsnowlog@gmail.com'
+    EMAIL_PASSWORD=os.getenv('EMAIL_PASSWORD')
+
+    # jwt = credentials.credentials
+    # print(jwt)
+    
+    # supabase: Client = create_client(os.getenv('SUPABASE_URL'), os.getenv('SUPABASE_PUBLIC'))
+    # Using Supabase service_role key to bypass RLS
     supabase: Client = create_client(os.getenv('SUPABASE_URL'), os.getenv('SUPABASE_KEY'))
-    supabase.auth.get_user(jwt)
-    response = supabase.table("logs").select('*').csv().execute()
+    # supabase.auth.get_user(jwt)
+    response = supabase.table("logs").select('*').eq('user_id', user_id).csv().execute()
     
     if 'error' in response:
         raise HTTPException(status_code=500, detail=response['error']['message'])
     
     csv_data = response.data
-    pprint(csv_data)
     csvResponse = construct_csv(csv_data)
+
 
     return csv_data
 
