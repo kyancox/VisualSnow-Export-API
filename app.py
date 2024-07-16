@@ -1,13 +1,36 @@
 import io
 import pandas as pd
 import json
-from fastapi import FastAPI
 from pydantic import BaseModel
+from supabase import create_client, Client
+from dotenv import load_dotenv
+import os
+from fastapi import FastAPI, HTTPException, Depends, Request
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from jose import jwt
+from pprint import pprint
+
+load_dotenv()
 
 app = FastAPI()
 
 class EmailRequest(BaseModel):
     email: str
+
+security = HTTPBearer()
+
+def parseJWT(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    token = credentials.credentials
+    print(f"Received token: {token}")  # Log the received token
+    try:
+        payload = jwt.decode(token, os.getenv('SUPABASE_JWT_SECRET'), algorithms=['HS256'])
+        print(f"Decoded payload: {payload}")  # Log the decoded payload
+        return payload['sub']  # assuming the user ID is stored in the 'sub' field
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token expired")
+    except jwt.JWTError as e:
+        print(f"JWT error: {e}")  # Log the JWT error
+        raise HTTPException(status_code=401, detail="Invalid token")
 
 # Function to create rows for each symptom
 def expand_symptoms(row):
@@ -78,18 +101,22 @@ def construct_csv(csv_data):
 
     return expanded_df
 
-@app.get('/export_csv')
-def export_csv():
-    return None
+@app.post('/export')
+def export(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    jwt = credentials.credentials
+    supabase: Client = create_client(os.getenv('SUPABASE_URL'), os.getenv('SUPABASE_KEY'))
+    supabase.auth.get_user(jwt)
+    response = supabase.table("logs").select('*').csv().execute()
+    
+    if 'error' in response:
+        raise HTTPException(status_code=500, detail=response['error']['message'])
+    
+    csv_data = response.data
+    pprint(csv_data)
+    csvResponse = construct_csv(csv_data)
 
-@app.get('/export_pdf')
-def export_pdf():
-    return None
-
-@app.get('/export')
-def export():
-    return None
+    return csv_data
 
 if __name__ == '__main__':
     import uvicorn
-    uvicorn.run(app, host='0.0.0.0', port=8000)
+    uvicorn.run("app:app", host='0.0.0.0', port=8000, reload=True)
