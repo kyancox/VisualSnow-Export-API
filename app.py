@@ -18,19 +18,11 @@ from email import encoders
 load_dotenv()
 
 app = FastAPI()
-
-class EmailRequest(BaseModel):
-    email: str
-
-class UserID(BaseModel):
-    user_id: str
+security = HTTPBearer()
 
 class ExportRequest(BaseModel):
     email: str
     user_id: str
-
-
-security = HTTPBearer()
 
 # Function to create rows for each symptom
 def expand_symptoms(row):
@@ -102,31 +94,21 @@ def construct_csv(csv_data):
     return expanded_df
 
 @app.post('/export')
-# Old definition for JWT thorugh authorization bearer
-# def export(emailReq: EmailRequest, credentials: HTTPAuthorizationCredentials = Depends(security)):
 def export(request: ExportRequest):
     user_id = request.user_id
     to_email = request.email
 
     SENDER_EMAIL='visualsnowlog@gmail.com'
-    # EMAIL_PASSWORD=os.getenv('EMAIL_PASSWORD')
     GMAIL_APP_PASSWORD=os.getenv('GMAIL_APP_PASSWORD')
 
-    # jwt = credentials.credentials
-    # print(jwt)
-    
-    # supabase: Client = create_client(os.getenv('SUPABASE_URL'), os.getenv('SUPABASE_PUBLIC'))
     # Using Supabase service_role key to bypass RLS
     supabase: Client = create_client(os.getenv('SUPABASE_URL'), os.getenv('SUPABASE_KEY'))
-    # supabase.auth.get_user(jwt)
     response = supabase.table("logs").select('*').eq('user_id', user_id).csv().execute()
-    # response = supabase.table("logs").select('*').eq('user_id', user_id).execute()
     
     if 'error' in response:
         raise HTTPException(status_code=500, detail=response['error']['message'])
     
     csv_data = response.data
-    # print(f'len(csv_data): {len(csv_data)}')
     csvResponse = construct_csv(csv_data)
 
     # Create a multipart message
@@ -135,8 +117,9 @@ def export(request: ExportRequest):
     msg['To'] = to_email
     msg['Subject'] = f'Your Visual Snow Log from {datetime.now().strftime("%Y-%m-%d")}.'
 
-    body = "This is the body of the email"
-  # Attach the body with the msg instance
+    body = "You can find your exported logs attached below."
+
+    # Attach the body with the msg instance
     msg.attach(MIMEText(body, 'plain'))
 
     csv_buffer = io.StringIO()
@@ -160,10 +143,10 @@ def export(request: ExportRequest):
         server.sendmail(SENDER_EMAIL, to_email, text)
         server.quit()
         print("Email sent successfully")
+        return {'message:' 'Email successfully sent'}, 200 
     except Exception as e:
         print(f"Failed to send email: {str(e)}")
-
-    return csv_data
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == '__main__':
     import uvicorn
