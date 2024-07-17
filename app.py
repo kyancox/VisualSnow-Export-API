@@ -1,3 +1,4 @@
+from datetime import datetime
 import io
 import pandas as pd
 import json
@@ -8,7 +9,7 @@ import os
 from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pprint import pprint
-from aiosmtplib import SMTP
+import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
@@ -105,9 +106,11 @@ def construct_csv(csv_data):
 # def export(emailReq: EmailRequest, credentials: HTTPAuthorizationCredentials = Depends(security)):
 def export(request: ExportRequest):
     user_id = request.user_id
+    to_email = request.email
 
     SENDER_EMAIL='visualsnowlog@gmail.com'
-    EMAIL_PASSWORD=os.getenv('EMAIL_PASSWORD')
+    # EMAIL_PASSWORD=os.getenv('EMAIL_PASSWORD')
+    GMAIL_APP_PASSWORD=os.getenv('GMAIL_APP_PASSWORD')
 
     # jwt = credentials.credentials
     # print(jwt)
@@ -117,13 +120,48 @@ def export(request: ExportRequest):
     supabase: Client = create_client(os.getenv('SUPABASE_URL'), os.getenv('SUPABASE_KEY'))
     # supabase.auth.get_user(jwt)
     response = supabase.table("logs").select('*').eq('user_id', user_id).csv().execute()
+    # response = supabase.table("logs").select('*').eq('user_id', user_id).execute()
     
     if 'error' in response:
         raise HTTPException(status_code=500, detail=response['error']['message'])
     
     csv_data = response.data
+    # print(f'len(csv_data): {len(csv_data)}')
     csvResponse = construct_csv(csv_data)
 
+    # Create a multipart message
+    msg = MIMEMultipart()
+    msg['From'] = SENDER_EMAIL
+    msg['To'] = to_email
+    msg['Subject'] = f'Your Visual Snow Log from {datetime.now().strftime("%Y-%m-%d")}.'
+
+    body = "This is the body of the email"
+  # Attach the body with the msg instance
+    msg.attach(MIMEText(body, 'plain'))
+
+    csv_buffer = io.StringIO()
+    csvResponse.to_csv(csv_buffer, index=False)
+    csv_buffer.seek(0)
+    
+    filename='log_data.csv'
+
+    # Attach the CSV file
+    part = MIMEBase('application', 'octet-stream')
+    part.set_payload(csv_buffer.read())
+    encoders.encode_base64(part)
+    part.add_header('Content-Disposition', f'attachment; filename={filename}')
+    msg.attach(part)
+
+    try:
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server.starttls()
+        server.login(SENDER_EMAIL, GMAIL_APP_PASSWORD)
+        text = msg.as_string()
+        server.sendmail(SENDER_EMAIL, to_email, text)
+        server.quit()
+        print("Email sent successfully")
+    except Exception as e:
+        print(f"Failed to send email: {str(e)}")
 
     return csv_data
 
