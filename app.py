@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from supabase import create_client, Client
 from dotenv import load_dotenv
 import os
-from fastapi import FastAPI, HTTPException, Depends, Request
+from fastapi import FastAPI, HTTPException, Depends, Request, Response
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pprint import pprint
 import smtplib
@@ -143,7 +143,7 @@ def export(request: ExportRequest):
         server.sendmail(SENDER_EMAIL, to_email, text)
         server.quit()
         print("Email sent successfully")
-        return {'message:' 'Email successfully sent'}, 200 
+        return Response(content='Email sent successfully.', status_code=200)
     except Exception as e:
         print(f"Failed to send email: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
