@@ -142,7 +142,7 @@ def export(request: ExportRequest):
         text = msg.as_string()
         server.sendmail(SENDER_EMAIL, to_email, text)
         server.quit()
-        print("Email sent successfully")
+        print("Email sent successfully.")
         return Response(content='Email sent successfully.', status_code=200)
     except Exception as e:
         print(f"Failed to send email: {str(e)}")
