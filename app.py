@@ -93,6 +93,10 @@ def construct_csv(csv_data):
 
     return expanded_df
 
+@app.get('/')
+def index():
+    return Response(content='FastAPI for Visual Snow Log.', status_code=200)
+
 @app.post('/export')
 def export(request: ExportRequest):
     user_id = request.user_id
